@@ -7,50 +7,39 @@ import { query } from './db/client.mjs';
 dotenv.config();
 
 const app = express();
-
 app.use(cors());
 app.use(express.json());
 
-// 根路由：純測試用
+// 根路由（方便你之後測）
 app.get('/', (req, res) => {
-  res.json({
-    status: 'ok',
-    message: 'root route working',
-  });
+  res.json({ status: 'ok', message: 'y1ran backend root' });
 });
 
-// 健康檢查：只測 API server
+// 健康檢查（不碰 DB）
 app.get('/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    message: 'backend alive',
-  });
+  res.json({ status: 'ok', message: 'backend alive' });
 });
 
-// DB 健康檢查：真的去打 PostgreSQL
+// DB 連線檢查
 app.get('/db-check', async (req, res) => {
   try {
-    const result = await query('SELECT NOW()');
+    const result = await query('SELECT NOW() AS now;');
     res.json({
       status: 'ok',
       db: 'connected',
-      time: result.rows[0],
+      now: result.rows[0].now,
     });
   } catch (err) {
-    // 這行會直接出現在 Railway Logs 裡，之後 debug 全靠這個
-    console.error('DB ERROR:', err);
-
-    res.json({
+    console.error('DB check failed:', err);
+    res.status(500).json({
       status: 'error',
       db: 'failed',
-      error: err.message, // 這次就不會是空字串了
+      error: err.message,
     });
   }
 });
 
-// Railway 一定要用 process.env.PORT
 const port = process.env.PORT || 8080;
-
 app.listen(port, () => {
   console.log(`API server running on port ${port}`);
 });
