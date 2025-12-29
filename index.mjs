@@ -9,6 +9,14 @@ import { supabaseAdmin } from './lib/supabase.mjs';
 
 const app = express();
 
+app.get("/api/profile", (req, res) => {
+  res.json({
+    ok: true,
+    source: "DIRECT index.mjs",
+    time: Date.now(),
+  });
+});
+
 // 基本設定
 const PORT = process.env.PORT || 8080;
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -19,10 +27,6 @@ if (!JWT_SECRET) {
 
 app.use(cors());
 app.use(express.json());
-
-app.get('/api/profile', (req, res) => {
-  res.json({ ok: true, where: 'api/profile', ts: Date.now() });
-});
 
 // 簡單 root
 app.get('/', (req, res) => {
