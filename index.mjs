@@ -5,6 +5,7 @@ import cors from 'cors';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { query } from './db/client.mjs';
+import { supabaseAdmin } from './lib/supabase.mjs';
 
 const app = express();
 
@@ -18,6 +19,10 @@ if (!JWT_SECRET) {
 
 app.use(cors());
 app.use(express.json());
+
+app.get('/api/profile', (req, res) => {
+  res.json({ ok: true, where: 'api/profile', ts: Date.now() });
+});
 
 // 簡單 root
 app.get('/', (req, res) => {
@@ -205,6 +210,96 @@ app.get('/me', authMiddleware, async (req, res) => {
     res
       .status(500)
       .json({ status: 'error', message: 'Internal error', error: err.message });
+  }
+});
+
+// ----------------------
+//  Profile: 取得 / 建立
+// ----------------------
+app.get('/api/profile', authMiddleware, async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user?.id) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    const { data: existing, error: qErr } = await supabaseAdmin
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    if (qErr) {
+      return res.status(500).json({ message: qErr.message });
+    }
+
+    if (existing) {
+      return res.json(existing);
+    }
+
+    const payload = {
+      id: user.id,
+      display_name: '',
+      avatar_url: '',
+      provider: user.provider ?? '',
+      email: user.email ?? '',
+    };
+
+    const { data: created, error: iErr } = await supabaseAdmin
+      .from('profiles')
+      .insert(payload)
+      .select('*')
+      .single();
+
+    if (iErr) {
+      return res.status(500).json({ message: iErr.message });
+    }
+
+    return res.json(created);
+  } catch (err) {
+    console.error('Profile GET error:', err);
+    return res.status(500).json({
+      message: err?.message ?? String(err),
+    });
+  }
+});
+
+// ----------------------
+//  Profile: 更新
+// ----------------------
+app.put('/api/profile', authMiddleware, async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user?.id) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    const { display_name, avatar_url } = req.body || {};
+    const safeDisplay =
+      typeof display_name === 'string' ? display_name.slice(0, 50) : '';
+    const safeAvatar =
+      typeof avatar_url === 'string' ? avatar_url.slice(0, 500) : '';
+
+    const { data, error } = await supabaseAdmin
+      .from('profiles')
+      .update({
+        display_name: safeDisplay,
+        avatar_url: safeAvatar,
+      })
+      .eq('id', user.id)
+      .select('*')
+      .single();
+
+    if (error) {
+      return res.status(500).json({ message: error.message });
+    }
+
+    return res.json(data);
+  } catch (err) {
+    console.error('Profile PUT error:', err);
+    return res.status(500).json({
+      message: err?.message ?? String(err),
+    });
   }
 });
 
