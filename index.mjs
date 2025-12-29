@@ -3,19 +3,12 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import bcrypt from 'bcryptjs';
+import { createClient } from '@supabase/supabase-js';
 import jwt from 'jsonwebtoken';
 import { query } from './db/client.mjs';
 import { supabaseAdmin } from './lib/supabase.mjs';
 
 const app = express();
-
-app.get("/api/profile", (req, res) => {
-  res.json({
-    ok: true,
-    source: "DIRECT index.mjs",
-    time: Date.now(),
-  });
-});
 
 // 基本設定
 const PORT = process.env.PORT || 8080;
@@ -25,8 +18,36 @@ if (!JWT_SECRET) {
   console.warn('⚠️ JWT_SECRET is not set. JWT features will not work.');
 }
 
+const supabaseAuth = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY,
+  { auth: { persistSession: false } }
+);
 app.use(cors());
 app.use(express.json());
+
+// --- CORS (must be before routes) ---
+const ALLOWED_ORIGINS = new Set([
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "https://y1ran.app",
+  "https://www.y1ran.app",
+]);
+
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+
+  if (origin && ALLOWED_ORIGINS.has(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+  }
+
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+  if (req.method === "OPTIONS") return res.status(204).end();
+  next();
+});
 
 // 簡單 root
 app.get('/', (req, res) => {
@@ -66,23 +87,23 @@ function signToken(user) {
 }
 
 // 驗證 JWT 的中介層
-function authMiddleware(req, res, next) {
+async function authMiddleware(req, res, next) {
   const authHeader = req.headers.authorization || '';
-
-  const [, token] = authHeader.split(' '); // "Bearer xxx"
+  const [, token] = authHeader.split(' ');
 
   if (!token) {
     return res.status(401).json({ status: 'error', message: 'Missing token' });
   }
 
-  try {
-    const payload = jwt.verify(token, JWT_SECRET);
-    req.user = payload;
-    next();
-  } catch (err) {
-    console.error('JWT verify failed:', err);
+  const { data, error } = await supabaseAuth.auth.getUser(token);
+
+  if (error || !data?.user) {
+    console.error('Supabase auth.getUser failed:', error);
     return res.status(401).json({ status: 'error', message: 'Invalid token' });
   }
+
+  req.user = { id: data.user.id, email: data.user.email };
+  next();
 }
 
 // ----------------------
@@ -222,88 +243,68 @@ app.get('/me', authMiddleware, async (req, res) => {
 // ----------------------
 app.get('/api/profile', authMiddleware, async (req, res) => {
   try {
-    const user = req.user;
-    if (!user?.id) {
-      return res.status(401).json({ message: 'Unauthorized' });
+    const { email } = req.user;
+    if (!email) {
+      return res.status(400).json({ error: 'Missing email in token' });
     }
 
-    const { data: existing, error: qErr } = await supabaseAdmin
+    const { data: profile, error } = await supabaseAdmin
       .from('profiles')
       .select('*')
-      .eq('id', user.id)
+      .eq('email', email)
       .maybeSingle();
 
-    if (qErr) {
-      return res.status(500).json({ message: qErr.message });
+    if (error) {
+      return res.status(500).json({ error: error.message });
     }
 
-    if (existing) {
-      return res.json(existing);
+    if (!profile) {
+      const { data: created, error: insertErr } = await supabaseAdmin
+        .from('profiles')
+        .insert({
+          email,
+          display_name: '',
+          avatar_url: '',
+        })
+        .select('*')
+        .single();
+
+      if (insertErr) {
+        return res.status(500).json({ error: insertErr.message });
+      }
+
+      return res.json(created);
     }
 
-    const payload = {
-      id: user.id,
-      display_name: '',
-      avatar_url: '',
-      provider: user.provider ?? '',
-      email: user.email ?? '',
-    };
-
-    const { data: created, error: iErr } = await supabaseAdmin
-      .from('profiles')
-      .insert(payload)
-      .select('*')
-      .single();
-
-    if (iErr) {
-      return res.status(500).json({ message: iErr.message });
-    }
-
-    return res.json(created);
-  } catch (err) {
-    console.error('Profile GET error:', err);
-    return res.status(500).json({
-      message: err?.message ?? String(err),
-    });
+    return res.json(profile);
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
   }
 });
 
-// ----------------------
-//  Profile: 更新
-// ----------------------
 app.put('/api/profile', authMiddleware, async (req, res) => {
   try {
-    const user = req.user;
-    if (!user?.id) {
-      return res.status(401).json({ message: 'Unauthorized' });
-    }
-
+    const { email } = req.user;
     const { display_name, avatar_url } = req.body || {};
-    const safeDisplay =
-      typeof display_name === 'string' ? display_name.slice(0, 50) : '';
-    const safeAvatar =
-      typeof avatar_url === 'string' ? avatar_url.slice(0, 500) : '';
+
+    const patch = {};
+    if (typeof display_name === 'string') patch.display_name = display_name;
+    if (typeof avatar_url === 'string') patch.avatar_url = avatar_url;
 
     const { data, error } = await supabaseAdmin
       .from('profiles')
-      .update({
-        display_name: safeDisplay,
-        avatar_url: safeAvatar,
-      })
-      .eq('id', user.id)
+      .update(patch)
+      .eq('email', email)
       .select('*')
       .single();
 
     if (error) {
-      return res.status(500).json({ message: error.message });
+      return res.status(500).json({ error: error.message });
     }
 
     return res.json(data);
-  } catch (err) {
-    console.error('Profile PUT error:', err);
-    return res.status(500).json({
-      message: err?.message ?? String(err),
-    });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
   }
 });
 
@@ -311,3 +312,7 @@ app.put('/api/profile', authMiddleware, async (req, res) => {
 app.listen(PORT, () => {
   console.log(`API server running on port ${PORT}`);
 });
+
+
+
+
