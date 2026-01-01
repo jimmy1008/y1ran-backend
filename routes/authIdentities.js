@@ -15,9 +15,11 @@ export default function createAuthIdentitiesRouter(authMiddleware) {
       const providerUserId = (req.query.provider_user_id || "").toString();
 
       if (!provider || !providerUserId) {
-        return res
-          .status(400)
-          .json({ error: "missing provider/provider_user_id" });
+        return res.json({
+          linked: false,
+          message:
+            "usage: /api/auth/oauth-linked?provider=google&provider_user_id=<sub>",
+        });
       }
 
       const { data, error } = await supabaseAdmin
