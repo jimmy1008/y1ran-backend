@@ -9,7 +9,7 @@ export default function createAuthIdentitiesRouter(authMiddleware) {
     process.env.SUPABASE_SERVICE_ROLE_KEY
   );
 
-  router.get("/oauth-linked", authMiddleware, async (req, res) => {
+  router.get("/oauth-linked", async (req, res) => {
     try {
       const provider = (req.query.provider || "").toString();
       const providerUserId = (req.query.provider_user_id || "").toString();

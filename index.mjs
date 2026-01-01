@@ -98,6 +98,7 @@ async function authMiddleware(req, res, next) {
 
   if (error || !data?.user) {
     console.error('Supabase auth.getUser failed:', error);
+    console.error('token head:', token?.slice(0, 20), 'len:', token?.length);
     return res.status(401).json({ status: 'error', message: 'Invalid token' });
   }
 
@@ -105,8 +106,11 @@ async function authMiddleware(req, res, next) {
   next();
 }
 
-const authIdentitiesRouter = createAuthIdentitiesRouter(authMiddleware);
-app.use('/api/auth', authIdentitiesRouter);
+const authRouter = createAuthIdentitiesRouter(authMiddleware);
+const protectedRouter = express.Router();
+
+// 先掛 auth router（public routes）
+app.use('/api/auth', authRouter);
 console.log('[routes] /api/auth/oauth-linked (GET), /api/auth/oauth-link (POST) mounted');
 
 // ----------------------
@@ -244,7 +248,7 @@ app.get('/me', authMiddleware, async (req, res) => {
 // ----------------------
 //  Profile: 取得 / 建立
 // ----------------------
-app.get('/api/profile', authMiddleware, async (req, res) => {
+protectedRouter.get('/profile', async (req, res) => {
   try {
     const { email } = req.user;
     if (!email) {
@@ -285,7 +289,7 @@ app.get('/api/profile', authMiddleware, async (req, res) => {
   }
 });
 
-app.put('/api/profile', authMiddleware, async (req, res) => {
+protectedRouter.put('/profile', async (req, res) => {
   try {
     const { email } = req.user;
     const { display_name, avatar_url } = req.body || {};
@@ -310,6 +314,9 @@ app.put('/api/profile', authMiddleware, async (req, res) => {
     return res.status(500).json({ error: e.message });
   }
 });
+
+// 掛需要 token 的 API
+app.use('/api', authMiddleware, protectedRouter);
 
 // 啟動 server
 app.listen(PORT, () => {
