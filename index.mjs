@@ -7,6 +7,7 @@ import { createClient } from '@supabase/supabase-js';
 import jwt from 'jsonwebtoken';
 import { query } from './db/client.mjs';
 import { supabaseAdmin } from './lib/supabase.mjs';
+import createAuthIdentitiesRouter from './routes/authIdentities.js';
 
 const app = express();
 
@@ -103,6 +104,10 @@ async function authMiddleware(req, res, next) {
   req.user = { id: data.user.id, email: data.user.email };
   next();
 }
+
+const authIdentitiesRouter = createAuthIdentitiesRouter(authMiddleware);
+app.use('/api/auth', authIdentitiesRouter);
+console.log('[routes] /api/auth/oauth-linked (GET), /api/auth/oauth-link (POST) mounted');
 
 // ----------------------
 //  Auth: 註冊
