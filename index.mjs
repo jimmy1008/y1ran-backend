@@ -11,6 +11,18 @@ import createAuthIdentitiesRouter from './routes/authIdentities.js';
 
 const app = express();
 
+app.use(
+  cors({
+    origin: ['https://app.y1ran.app', 'http://localhost:5173'],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  })
+);
+
+// preflight
+app.options('*', cors());
+
 // 基本設定
 const PORT = process.env.PORT || 8080;
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -25,28 +37,6 @@ const supabaseAuth = createClient(
   { auth: { persistSession: false } }
 );
 app.use(express.json());
-
-const allowlist = [
-  "http://localhost:5173",
-  "http://127.0.0.1:5173",
-  "https://y1ran.app",
-  "https://www.y1ran.app",
-];
-
-app.use(
-  cors({
-    origin(origin, cb) {
-      if (!origin) return cb(null, true);
-      if (allowlist.includes(origin)) return cb(null, true);
-      return cb(new Error(`CORS blocked: ${origin}`));
-    },
-    credentials: true,
-    allowedHeaders: ["Content-Type", "Authorization"],
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  })
-);
-
-app.options("*", cors());
 
 // 簡單 root
 app.get('/', (req, res) => {
